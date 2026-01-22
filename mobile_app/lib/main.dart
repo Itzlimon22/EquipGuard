@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'api_service.dart'; // <--- Links to your Render Backend
+import 'api_service.dart'; // Ensure this file exists and contains your Render logic
 
 void main() {
   runApp(const EquipGuardApp());
@@ -35,16 +35,19 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   // 1. STATE VARIABLES
-  String status = "Waiting..."; // Initial state before data arrives
+  String status = "Waiting...";
   double temperature = 0.0;
   double vibration = 0.0;
   bool isAnomaly = false;
+
   Timer? _timer;
+  bool isAlertVisible =
+      false; // Prevents multiple popups stacking on top of each other
 
   @override
   void initState() {
     super.initState();
-    // 2. START POLLING: Fetch data every 2 seconds
+    // Start polling data every 2 seconds
     _timer = Timer.periodic(
       const Duration(seconds: 2),
       (timer) => _fetchData(),
@@ -53,44 +56,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel(); // Good practice: Stop timer when screen closes
+    _timer?.cancel();
     super.dispose();
   }
 
-  // 3. THE LOGIC ENGINE
+  // 2. LOGIC ENGINE
   Future<void> _fetchData() async {
-    // A. Simulate Sensor Readings (Since phone has no industrial sensors)
+    // A. Simulate Sensors (Local simulation)
     final random = Random();
     double simTemp = 50 + random.nextDouble() * 20; // Normal: 50-70 C
     double simVib = 10 + random.nextDouble() * 5; // Normal: 10-15 Hz
     double simVolt = 220 + random.nextDouble() * 2; // Normal: 220V
 
-    // B. FAILURE SIMULATION TRIGGER
-    // Every 10 seconds (when seconds end in 0 or 1), force a "Critical" reading
-    // so you can see the Red Alert screen.
+    // B. FAILURE TRIGGER (Every 10 seconds)
+    // Forces a high temp to test the Critical Alert
     if (DateTime.now().second % 10 < 2) {
-      simTemp = 95.0; // Overheating!
+      simTemp = 95.0;
     }
 
-    // C. Send data to Render API & Get Prediction
+    // C. Get Prediction from Cloud
     final result = await ApiService.getPrediction(simTemp, simVib, simVolt);
 
-    // D. Update the UI
+    // D. Update UI
     if (result.isNotEmpty && mounted) {
       setState(() {
         temperature = simTemp;
         vibration = simVib;
-        // Parse the nested JSON from Python
         status = result['prediction']['status'];
         isAnomaly = result['prediction']['is_anomaly'];
       });
+
+      // E. TRIGGER ALERT POPUP (Sprint 15)
+      if (status == "Critical" && !isAlertVisible) {
+        _showCriticalDialog();
+      }
     }
+  }
+
+  void _showCriticalDialog() {
+    isAlertVisible = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User MUST tap button to close
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.red[900],
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.white),
+            SizedBox(width: 10),
+            Text(
+              "CRITICAL ALERT",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          "Machine temperature has exceeded safe limits (95°C). Immediate maintenance required.",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              isAlertVisible =
+                  false; // Allow alert to show again if condition persists
+            },
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text(
+              "ACKNOWLEDGE",
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 4. DYNAMIC UI COLORS based on Status
-    Color statusColor = Colors.greenAccent; // Default Healthy
+    // Dynamic Colors
+    Color statusColor = Colors.greenAccent;
     if (status == "Warning") statusColor = Colors.orangeAccent;
     if (status == "Critical") statusColor = Colors.redAccent;
 
@@ -109,14 +160,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // HEADER
+            // Header
             const Text(
               "System Status",
               style: TextStyle(color: Colors.grey, fontSize: 16),
             ),
             const SizedBox(height: 5),
 
-            // MAIN STATUS CARD (Updates dynamically)
+            // MAIN STATUS CARD
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -158,7 +209,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 30),
 
-            // LIVE METRICS GRID
+            // METRICS GRID
             const Text(
               "Live Telemetry",
               style: TextStyle(color: Colors.grey, fontSize: 16),
@@ -167,7 +218,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             Row(
               children: [
-                // Temperature Card
                 Expanded(
                   child: _MetricCard(
                     title: "Temp",
@@ -177,7 +227,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 15),
-                // Vibration Card
                 Expanded(
                   child: _MetricCard(
                     title: "Vibration",
@@ -195,7 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// Helper Widget for consistent card design
+// Helper Widget
 class _MetricCard extends StatelessWidget {
   final String title;
   final String value;
